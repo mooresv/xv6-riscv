@@ -1,15 +1,15 @@
 #include "kernel/param.h"
 #include "kernel/types.h"
-#include "user/uproc.h"
+#include "kernel/pstat.h"
 #include "user/user.h"
 
 int
 main(int argc, char **argv)
 {
-  struct uproc uproc[NPROC];
+  struct pstat procp[NPROC];
   int nprocs;
 
-  nprocs = getprocs(uproc);
+  nprocs = getprocs(procp);
   if (nprocs < 0)
     exit(-1);
 
@@ -29,19 +29,21 @@ main(int argc, char **argv)
   [RUNNING]   "run   ",
   [ZOMBIE]    "zombie"
   };
-  struct uproc *p;
+  //struct proc *p;
+  struct pstat *p;
   char *state;
 
   printf("\n");
-  printf("pid  state  name  cpu_time size \n"); 
-  for(p = uproc; p < &uproc[NPROC]; p++){
+  printf("pid  state  name  cpu_time size \n");
+  // get value that returns from getprocs 
+  for(p = procp; p < &procp[NPROC]; p++){
     if(p->state == UNUSED)
       continue;
     if(p->state >= 0 && p->state < ((sizeof(states)/sizeof((states)[0]))) && states[p->state])
       state = states[p->state];
     else
       state = "???";
-     
+
     printf("%d   %s   %s    %d   %d", p->pid, state, p->name, p->cpu_time, p->size);
     printf("\n");
   }

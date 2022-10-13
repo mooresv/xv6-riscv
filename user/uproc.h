@@ -1,4 +1,4 @@
-enum uprocstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+
 
 struct uproc {
 
