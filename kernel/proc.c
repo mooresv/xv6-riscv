@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "pstat.h"
 
 struct cpu cpus[NCPU];
 
@@ -106,6 +107,7 @@ allocproc(void)
 {
   struct proc *p;
 
+
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
     if(p->state == UNUSED) {
@@ -119,7 +121,8 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
-
+  p->cpu_time=0;
+  
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
@@ -386,6 +389,7 @@ wait(uint64 addr)
   struct proc *np;
   int havekids, pid;
   struct proc *p = myproc();
+  //struct rusage *ru;
 
   acquire(&wait_lock);
 
@@ -403,6 +407,62 @@ wait(uint64 addr)
           pid = np->pid;
           if(addr != 0 && copyout(p->pagetable, addr, (char *)&np->xstate,
                                   sizeof(np->xstate)) < 0) {
+            release(&np->lock);
+            release(&wait_lock);
+            return -1;
+          }
+          freeproc(np);
+          release(&np->lock);
+          release(&wait_lock);
+          return pid;
+        }
+        release(&np->lock);
+      }
+    }
+
+    // No point waiting if we don't have any children.
+    if(!havekids || p->killed){
+      release(&wait_lock);
+      return -1;
+    }
+    
+    // Wait for a child to exit.
+    sleep(p, &wait_lock);  //DOC: wait-sleep
+  }
+}
+
+int
+wait2(uint64 addr,uint64 addr2)
+{
+  struct proc *np;
+  int havekids, pid, cpu_time;
+  struct proc *p = myproc();
+  struct rusage ru;
+
+  acquire(&wait_lock);
+
+  for(;;){
+    // Scan through table looking for exited children.
+    havekids = 0;
+    for(np = proc; np < &proc[NPROC]; np++){
+      if(np->parent == p){
+        // make sure the child isn't still in exit() or swtch().
+        acquire(&np->lock);
+
+        havekids = 1;
+        if(np->state == ZOMBIE){
+          // Found one.
+          pid = np->pid;
+          cpu_time = np -> cpu_time;
+          ru.cpu_time = cpu_time;
+          if(addr != 0 && copyout(p->pagetable, addr, (char *)&np->xstate,
+                                  sizeof(np->xstate)) < 0) {
+            release(&np->lock);
+            release(&wait_lock);
+            return -1;
+          }
+          if(addr2 != 0 && copyout(p->pagetable, addr2, (char *)&ru,
+                                  sizeof(ru)) < 0) {
             release(&np->lock);
             release(&wait_lock);
             return -1;
@@ -629,6 +689,7 @@ either_copyin(void *dst, int user_src, uint64 src, uint64 len)
 // Print a process listing to console.  For debugging.
 // Runs when user types ^P on console.
 // No lock to avoid wedging a stuck machine further.
+
 void
 procdump(void)
 {
@@ -654,3 +715,53 @@ procdump(void)
     printf("\n");
   }
 }
+
+struct uproc {
+
+int pid; // Process ID
+
+enum procstate state; // Process state
+
+uint64 size; // Size of process memory (bytes)
+
+int ppid; // Parent ID
+
+char name[16]; // Process command name
+
+int cpu_time;
+};
+
+int
+procinfo(uint64 addr)
+{
+struct proc *curr = myproc();
+struct proc *p;
+int count = 0;
+
+
+  printf("\n");
+  for(p = proc; p < &proc[NPROC]; p++){
+    if(p->state != UNUSED){
+      count += 1;
+      struct uproc var;
+      var.pid = p->pid;
+      if(p -> pid != 1){
+        var.ppid = p -> parent -> pid;
+      }else{
+        var.ppid = 0;
+      }
+      for(int i = 0; i < sizeof(var.name); i++){
+        var.name[i] = p -> name[i];
+      }
+      var.state = p -> state;
+      var.size = p -> sz;
+      var.cpu_time = p -> cpu_time;
+
+      if(copyout(curr->pagetable, addr, (char *)&var, sizeof(var)) < 0)
+        return -1;
+      addr += sizeof(var);
+    }
+  }
+  return count;
+}
+

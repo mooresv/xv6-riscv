@@ -1,10 +1,14 @@
 struct stat;
 struct rtcdate;
+struct pstat;
+struct rusage;
+struct uproc;
 
 // system calls
 int fork(void);
 int exit(int) __attribute__((noreturn));
 int wait(int*);
+int wait2(int*, struct rusage*); //edit
 int pipe(int*);
 int write(int, const void*, int);
 int read(int, void*, int);
@@ -23,6 +27,7 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int getprocs(struct pstat*);
 
 // ulib.c
 int stat(const char*, struct stat*);
